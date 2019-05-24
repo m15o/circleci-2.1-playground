@@ -4,7 +4,67 @@ executors:
     docker:
     - image: alpine:3.7
 
+commands:
+  with_source_hash_cache:
+    parameters:
+      path:
+        type: string
+      cache_key:
+        type: string
+      steps:
+        type: steps
+    steps:
+    - run:
+        command: echo $CIRCLE_SHA1 >> current-source-hash
+    - restore_cache:
+        key: << parameters.cache_key >>-{{ checksum "<< parameters.path >>/current-source-hash" }}
+    - steps: << parameters.steps >>
+    - save_cache:
+        paths:
+        - << parameters.path >>/source-hash
+        key: << parameters.cache_key >>-{{ checksum "<< parameters.path >>/source-hash"}}
+        when: on_success
+
+  with_some_check:
+    parameters:
+      path:
+        type: string
+      steps:
+        type: steps
+    steps:
+    - run: echo "do some check"
+    - steps: << parameters.steps >>
+
+  build_service:
+    parameters:
+      path:
+        type: string
+      cache_key:
+        type: string
+      do_some_check:
+        type: boolean
+        default: true
+    steps:
+    - with_source_hash_cache:
+        path: << parameters.path >>
+        cache_key: << parameters.cache_key >>
+        steps:
+        - when:
+            condition: << parameters.do_some_check >>
+            steps:
+            - with_some_check:
+                path: << parameters.path >>
+                steps:
+                - run: echo "build service"
+
 jobs:
+  build_x:
+    executor: alpine
+    steps:
+    - build_service:
+        path: .
+        cache_key: x
+
   my_job_x:
     executor: alpine
     parameters:
@@ -31,7 +91,7 @@ workflows:
     - my_job_y: 
         requires:
           - my_job_x
-
+    - build_x
   wf_2:
     triggers:
     - schedule:
@@ -46,3 +106,4 @@ workflows:
     - my_job_y: 
         requires:
           - my_job_x
+    - build_x
